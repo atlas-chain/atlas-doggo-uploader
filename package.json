@@ -6,9 +6,11 @@
   "description": "Hello-world + load-test apps for the Atlas (experimental Arkiv) data network",
   "scripts": {
     "account": "node scripts/gen-account.mjs",
+    "new-wallet": "node scripts/new-wallet.mjs",
     "fund": "node scripts/fund.mjs",
     "hello": "node scripts/hello.mjs",
     "bench": "node scripts/upload-bench.mjs",
+    "upload-dir": "node scripts/upload-dir.mjs",
     "viewer": "node scripts/viewer-server.mjs",
     "test": "node --test tests/*.test.mjs"
   },

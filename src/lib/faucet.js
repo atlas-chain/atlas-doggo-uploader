@@ -128,3 +128,30 @@ export async function fundAddress(address, { onProgress } = {}) {
   const nonces = await solveChallenge(challenge, { onProgress })
   return submitClaim(challenge, nonces)
 }
+
+/**
+ * Claim a drip, transparently waiting out the faucet's per-address cooldown
+ * (HTTP 429 COOLDOWN). Returns the claim receipt, or throws if it can't claim
+ * within maxWaitMs.
+ */
+export async function claimWithCooldown(
+  address,
+  { onProgress, onWait, maxWaitMs = 15 * 60 * 1000 } = {},
+) {
+  const start = Date.now()
+  for (;;) {
+    try {
+      return await fundAddress(address, { onProgress })
+    } catch (e) {
+      const m = /try again in (\d+)\s*s/i.exec(e.message)
+      const isCooldown = /COOLDOWN|recently funded|FAUCET_BUSY|busy/i.test(e.message)
+      if (isCooldown && Date.now() - start < maxWaitMs) {
+        const secs = (m ? Number(m[1]) : 60) + 3
+        onWait?.(secs)
+        await new Promise((r) => setTimeout(r, secs * 1000))
+        continue
+      }
+      throw e
+    }
+  }
+}

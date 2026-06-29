@@ -18,10 +18,14 @@ const { values } = parseArgs({
   options: {
     port: { type: "string", default: process.env.PORT ?? "8787" },
     app: { type: "string", default: process.env.APP ?? "atlas-loadtest" },
+    owner: { type: "string", default: process.env.OWNER ?? "" },
   },
 })
 const PORT = Number(values.port)
-const DEFAULT_APP = values.app
+const DEFAULT_OWNER = values.owner
+// when locked to an owner, default the app filter to empty so ALL of that
+// wallet's images show; otherwise default to the load-test app.
+const DEFAULT_APP = DEFAULT_OWNER ? "" : values.app
 const reader = makePublicClient()
 
 // branding assets (favicon + social share card)
@@ -34,6 +38,7 @@ const attr = (e, k) => e.attributes.find((a) => a.key === k)?.value
 async function apiImages(url, res) {
   const app = url.searchParams.get("app") || ""
   const run = url.searchParams.get("run") || ""
+  const owner = url.searchParams.get("owner") || ""
   const limit = Math.min(200, Number(url.searchParams.get("limit") || 60))
   const cursor = url.searchParams.get("cursor") || undefined
 
@@ -41,11 +46,12 @@ async function apiImages(url, res) {
   if (app) filters.app = app
   if (run) filters.run = run
 
-  // newest first when we have the numeric seq from the load test
-  const orderBy = app ? [{ name: "seq", type: "numeric", desc: true }] : undefined
+  // newest first when entities carry the numeric seq attribute (any filter set)
+  const orderBy = app || owner ? [{ name: "seq", type: "numeric", desc: true }] : undefined
 
   const { entities, cursor: next, blockNumber } = await queryEntitiesRaw(reader, {
     filters,
+    ownedBy: owner || undefined,
     limit,
     cursor,
     orderBy,
@@ -120,6 +126,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Atlas image viewer → http://localhost:${PORT}`)
+  if (DEFAULT_OWNER) console.log(`  locked to owner: ${DEFAULT_OWNER}`)
   console.log(`  default app filter: "${DEFAULT_APP}"  (change it in the UI)`)
 })
 
@@ -173,8 +180,9 @@ const PAGE = `<!doctype html>
 <body>
 <header>
   <h1>🐶 Atlas image viewer</h1>
-  <label class="k">app</label><input id="app" value="__APP__" size="16" />
-  <label class="k">run</label><input id="run" placeholder="(optional)" size="20" />
+  <label class="k">owner</label><input id="owner" value="__OWNER__" placeholder="0x… wallet (optional)" size="44" />
+  <label class="k">app</label><input id="app" value="__APP__" placeholder="(optional)" size="14" />
+  <label class="k">run</label><input id="run" placeholder="(optional)" size="14" />
   <label class="k">limit</label><input id="limit" value="60" size="3" />
   <button id="load">Load</button>
   <span id="status"></span>
@@ -200,9 +208,12 @@ let done = false
 function qs() {
   const app = document.getElementById('app').value.trim()
   const run = document.getElementById('run').value.trim()
+  const owner = document.getElementById('owner').value.trim()
   const limit = document.getElementById('limit').value.trim() || '60'
-  const p = new URLSearchParams({ app, limit })
+  const p = new URLSearchParams({ limit })
+  if (app) p.set('app', app)
   if (run) p.set('run', run)
+  if (owner) p.set('owner', owner)
   return p
 }
 
@@ -269,4 +280,4 @@ new IntersectionObserver(
 load(true)
 </script>
 </body>
-</html>`.replace("__APP__", DEFAULT_APP)
+</html>`.replace("__APP__", DEFAULT_APP).replace("__OWNER__", DEFAULT_OWNER)

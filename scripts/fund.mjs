@@ -1,48 +1,49 @@
 // Fund the test account headlessly via the Atlas faucet (solves the PoW locally).
-// Usage: npm run fund
+// The faucet drips 1 GLM per claim with a 60s per-address cooldown.
+//
+// Usage:
+//   npm run fund                 # one claim (+1 GLM)
+//   npm run fund -- --times 5    # five claims (waits out the cooldown between)
+//   npm run fund -- --target 10  # claim until balance >= 10 GLM
 
-import { formatEther } from "@atlas-chain/sdk"
+import { parseArgs } from "node:util"
+import { formatEther, parseEther } from "@atlas-chain/sdk"
 import { makeWalletClient, accountAddress } from "../src/lib/atlas.js"
-import { fundAddress } from "../src/lib/faucet.js"
+import { claimWithCooldown } from "../src/lib/faucet.js"
+
+const { values } = parseArgs({
+  options: { times: { type: "string" }, target: { type: "string" } },
+})
 
 const address = accountAddress()
 const client = makeWalletClient()
+const balance = () => client.getBalance({ address })
 
-const before = await client.getBalance({ address })
+const targetWei = values.target ? parseEther(values.target) : null
+const times = values.times ? Math.max(1, Number(values.times)) : 1
+
 console.log(`address ${address}`)
-console.log(`balance ${formatEther(before)} GLM`)
+console.log(`balance ${formatEther(await balance())} GLM`)
+if (targetWei) console.log(`target  ${values.target} GLM`)
+else console.log(`claims  ${times} × 1 GLM`)
 
-if (before > 0n) {
-  console.log("already funded — nothing to do.")
-  process.exit(0)
-}
+let claimed = 0
+for (;;) {
+  const bal = await balance()
+  if (targetWei ? bal >= targetWei : claimed >= times) break
 
-let lastPct = -1
-const onProgress = (done, total) => {
-  const pct = Math.floor((done / total) * 100)
-  if (pct >= lastPct + 10) {
-    lastPct = pct
-    process.stdout.write(`  solving proof-of-work… ${pct}%\r`)
+  process.stdout.write(`  claim #${claimed + 1} — solving PoW…`)
+  const res = await claimWithCooldown(address, {
+    onWait: (s) => process.stdout.write(` cooldown ${s}s…`),
+  })
+  claimed++
+  // let the drip land
+  let landed = false
+  for (let i = 0; i < 30 && !landed; i++) {
+    await new Promise((r) => setTimeout(r, 1000))
+    landed = (await balance()) > bal
   }
+  console.log(` +1 GLM (tx ${res.txHash.slice(0, 12)}…)  balance ${formatEther(await balance())} GLM`)
 }
 
-const t0 = Date.now()
-console.log("requesting + solving faucet challenge…")
-const res = await fundAddress(address, { onProgress })
-console.log(
-  `\nclaim ok in ${((Date.now() - t0) / 1000).toFixed(1)}s — tx ${res.txHash}, +${formatEther(BigInt(res.amountWei))} GLM`,
-)
-
-// Wait for the drip to land.
-process.stdout.write("waiting for balance to update")
-for (let i = 0; i < 40; i++) {
-  await new Promise((r) => setTimeout(r, 1500))
-  const bal = await client.getBalance({ address })
-  if (bal > 0n) {
-    console.log(`\nfunded: ${formatEther(bal)} GLM`)
-    process.exit(0)
-  }
-  process.stdout.write(".")
-}
-console.error("\ntimed out waiting for balance — check the faucet/RPC and retry.")
-process.exit(1)
+console.log(`done: ${claimed} claim(s), balance ${formatEther(await balance())} GLM`)
