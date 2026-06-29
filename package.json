@@ -11,6 +11,7 @@
     "hello": "node scripts/hello.mjs",
     "bench": "node scripts/upload-bench.mjs",
     "upload-dir": "node scripts/upload-dir.mjs",
+    "probe-net": "node scripts/probe-net.mjs",
     "viewer": "node scripts/viewer-server.mjs",
     "test": "node --test tests/*.test.mjs"
   },

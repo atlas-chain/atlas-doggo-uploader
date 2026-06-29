@@ -14,9 +14,9 @@
 //   --random       pick images randomly from the dataset instead of sequentially
 
 import { parseArgs } from "node:util"
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, join } from "node:path"
+import { dirname, join, isAbsolute } from "node:path"
 import { formatEther } from "@atlas-chain/sdk"
 import { ExpirationTime } from "@atlas-chain/sdk/utils"
 import { makeWalletClient } from "../src/lib/atlas.js"
@@ -35,9 +35,17 @@ const { values } = parseArgs({
     app: { type: "string", default: "atlas-loadtest" },
     run: { type: "string" },
     "expires-days": { type: "string", default: "7" },
+    dir: { type: "string" },
     random: { type: "boolean", default: false },
   },
 })
+
+const DIR = values.dir
+  ? isAbsolute(values.dir)
+    ? values.dir
+    : join(process.cwd(), values.dir)
+  : null
+const pathFor = (name) => (DIR ? join(DIR, name) : dogPath(name))
 
 const ACCOUNTS = Math.max(1, Number(values.accounts))
 const BATCH = Math.max(1, Number(values.batch))
@@ -57,7 +65,7 @@ async function main() {
   )
 
   // 1. dataset
-  const names = listDogNames()
+  const names = DIR ? readdirSync(DIR).filter((n) => n.toLowerCase().endsWith(".png")) : listDogNames()
   if (!names.length) throw new Error("no dog images found")
 
   // 2. funded sender pool
@@ -95,7 +103,7 @@ async function main() {
       const items = nextBatch()
       if (!items) break
       const creates = items.map(({ name, seq }) => {
-        const bytes = new Uint8Array(readFileSync(dogPath(name)))
+        const bytes = new Uint8Array(readFileSync(pathFor(name)))
         return {
           payload: bytes,
           contentType: "image/png",

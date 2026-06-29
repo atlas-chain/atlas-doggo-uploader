@@ -69,7 +69,9 @@ function loadCheckpoint() {
 // wallet already uploaded for this app. Makes restarts duplicate-proof even with
 // no local checkpoint (e.g. moving to a fresh server) or after a hard kill.
 async function chainUploadedNames() {
-  const LIMIT = 1000
+  // NOTE: the RPC caps results per page (~200) regardless of the requested
+  // limit, so we MUST paginate by cursor until it's exhausted — never stop on
+  // a short page, or we'd miss most entities and re-upload them (duplicates).
   const names = new Set()
   let cursor
   let pages = 0
@@ -79,7 +81,7 @@ async function chainUploadedNames() {
       page = await queryEntitiesRaw(client, {
         filters: { app: APP },
         ownedBy: address,
-        limit: LIMIT,
+        limit: 1000,
         cursor,
         withMetadata: false,
       })
@@ -93,7 +95,7 @@ async function chainUploadedNames() {
     }
     pages++
     process.stdout.write(`  reconciling with chain… ${names.size} found (page ${pages})\r`)
-    if (!page.cursor || page.cursor === cursor || page.entities.length < LIMIT) break
+    if (!page.cursor || page.cursor === cursor || page.entities.length === 0) break
     cursor = page.cursor
   }
   if (pages) process.stdout.write("\n")
