@@ -1,0 +1,10 @@
+node_modules
+out
+.env
+*.local
+tests
+.git
+.gitignore
+.playwright-mcp
+*.md
+downloaded*.png

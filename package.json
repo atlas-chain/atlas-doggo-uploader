@@ -1,0 +1,21 @@
+{
+  "name": "atlas-apps",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hello-world + load-test apps for the Atlas (experimental Arkiv) data network",
+  "scripts": {
+    "account": "node scripts/gen-account.mjs",
+    "fund": "node scripts/fund.mjs",
+    "hello": "node scripts/hello.mjs",
+    "bench": "node scripts/upload-bench.mjs",
+    "viewer": "node scripts/viewer-server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@atlas-chain/sdk": "^0.6.15"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

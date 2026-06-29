@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.local
+# tooling
+.claude-flow/
+.playwright-mcp/
+# generated artifacts
+out/
+downloaded*.png
+*.tmp
