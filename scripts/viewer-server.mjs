@@ -192,7 +192,7 @@ const statusEl = document.getElementById('status')
 const endEl = document.getElementById('end')
 const sentinel = document.getElementById('sentinel')
 const modal = document.getElementById('modal')
-const SCANNER = 'https://scanner.atlas.arkiv-global.net/entity/'
+const PAYLOAD = 'https://payload.atlas.arkiv-global.net/payloads/'
 let cursor = null
 let loading = false
 let done = false
@@ -251,7 +251,7 @@ function openModal(img) {
     '<div><span class="k">owner</span> ' + (img.owner||'—') + '</div>' +
     '<div><span class="k">entity</span> ' + img.key + '</div>' +
     '<div><span class="k">payload id</span> ' + img.payloadId + '</div>' +
-    '<div><a href="' + SCANNER + img.key + '" target="_blank">open in scanner ↗</a></div>'
+    '<div><a href="' + PAYLOAD + img.payloadId + '/raw" target="_blank">open image ↗</a> &nbsp;·&nbsp; <a href="' + PAYLOAD + img.payloadId + '" target="_blank">payload receipt ↗</a></div>'
   modal.showModal()
 }
 modal.onclick = (e) => { if (e.target === modal) modal.close() }

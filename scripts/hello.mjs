@@ -11,14 +11,13 @@ import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { formatEther } from "@atlas-chain/sdk"
 import { ExpirationTime } from "@atlas-chain/sdk/utils"
-import { makeWalletClient, makePublicClient, accountAddress } from "../src/lib/atlas.js"
+import { makeWalletClient, makePublicClient, accountAddress, PAYLOAD_URL } from "../src/lib/atlas.js"
 import { fundAddress } from "../src/lib/faucet.js"
 import { pickDog } from "../src/lib/images.js"
 import { queryEntitiesRaw } from "../src/lib/read.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const sha = (b) => createHash("sha256").update(b).digest("hex")
-const scanner = (key) => `https://scanner.atlas.arkiv-global.net/entity/${key}`
 
 const imagePath = process.argv[2] ?? pickDog()
 const bytes = new Uint8Array(readFileSync(imagePath))
@@ -59,7 +58,6 @@ const { entityKey, txHash } = await wallet.createEntity({
 })
 console.log(`\nuploaded   : ${entityKey}`)
 console.log(`  tx       : ${txHash}  (${((Date.now() - t0) / 1000).toFixed(2)}s)`)
-console.log(`  scanner  : ${scanner(entityKey)}`)
 
 // --- download (hydratePayload pulls + checksum-verifies the bytes) ---
 const entity = await reader.getEntity(entityKey, { hydratePayload: true })
@@ -68,6 +66,7 @@ const outPath = join(ROOT, "out", "downloaded.png")
 writeFileSync(outPath, entity.payload)
 console.log(`\ndownloaded : ${outPath} (${entity.payload.length} bytes)`)
 console.log(`  contentType: ${entity.contentType}`)
+if (entity.payloadRef?.id) console.log(`  payload  : ${PAYLOAD_URL}/payloads/${entity.payloadRef.id}/raw`)
 
 // --- verify round-trip ---
 const ok = sha(bytes) === sha(entity.payload)
