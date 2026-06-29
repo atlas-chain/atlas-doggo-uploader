@@ -16,6 +16,10 @@ export const NAMESPACE = "arkiv.entities"
 // Current public sandbox ingress key for the payload provider's upload endpoint.
 export const DEFAULT_BEARER_KEY = "atlas-signer-pub-token"
 export const CHAIN = atlas
+// viem polls every `pollingInterval` ms for tx receipts; the 4000ms default
+// quantizes waitForTransactionReceipt and ~doubles per-tx latency (blocks are
+// 2s). 500ms detects inclusion promptly without hammering the RPC.
+export const POLLING_INTERVAL = Number(process.env.ATLAS_POLLING_MS || 500)
 
 // Project root = two levels up from src/lib/
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
@@ -65,6 +69,7 @@ export function makeWalletClient(privateKey = getPrivateKey()) {
   return createWalletClient({
     chain: CHAIN,
     transport: http(RPC_URL),
+    pollingInterval: POLLING_INTERVAL,
     account: privateKeyToAccount(privateKey),
     payloadProvider: {
       url: PAYLOAD_URL,
@@ -79,6 +84,7 @@ export function makePublicClient() {
   return createPublicClient({
     chain: CHAIN,
     transport: http(RPC_URL),
+    pollingInterval: POLLING_INTERVAL,
     payloadProvider: {
       url: PAYLOAD_URL,
       namespace: NAMESPACE,
