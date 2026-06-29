@@ -19,6 +19,7 @@ import { formatEther, parseEther } from "@atlas-chain/sdk"
 import { ExpirationTime } from "@atlas-chain/sdk/utils"
 import { makeWalletClient, accountAddress } from "../src/lib/atlas.js"
 import { claimWithCooldown } from "../src/lib/faucet.js"
+import { queryEntitiesRaw } from "../src/lib/read.js"
 import { DOGS_DIR } from "../src/lib/images.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -33,6 +34,7 @@ const { values } = parseArgs({
     "expires-days": { type: "string", default: "30" },
     "min-balance": { type: "string", default: "0.3" },
     "no-autofund": { type: "boolean", default: false },
+    "no-reconcile": { type: "boolean", default: false },
   },
 })
 
@@ -63,6 +65,41 @@ function loadCheckpoint() {
   return new Set(readFileSync(CHECKPOINT, "utf8").split("\n").filter(Boolean))
 }
 
+// Reconcile against the chain: collect the `name` attribute of every entity this
+// wallet already uploaded for this app. Makes restarts duplicate-proof even with
+// no local checkpoint (e.g. moving to a fresh server) or after a hard kill.
+async function chainUploadedNames() {
+  const LIMIT = 1000
+  const names = new Set()
+  let cursor
+  let pages = 0
+  for (;;) {
+    let page
+    try {
+      page = await queryEntitiesRaw(client, {
+        filters: { app: APP },
+        ownedBy: address,
+        limit: LIMIT,
+        cursor,
+        withMetadata: false,
+      })
+    } catch (e) {
+      console.warn(`\n  reconcile: chain query failed (${e.message}) — using local checkpoint only`)
+      break
+    }
+    for (const e of page.entities) {
+      const n = e.attributes.find((a) => a.key === "name")?.value
+      if (n) names.add(n)
+    }
+    pages++
+    process.stdout.write(`  reconciling with chain… ${names.size} found (page ${pages})\r`)
+    if (!page.cursor || page.cursor === cursor || page.entities.length < LIMIT) break
+    cursor = page.cursor
+  }
+  if (pages) process.stdout.write("\n")
+  return names
+}
+
 async function ensureBalance() {
   if (!AUTOFUND) return
   let bal = await balance()
@@ -84,11 +121,13 @@ async function ensureBalance() {
 }
 
 let stopping = false
-process.on("SIGINT", () => {
+const onStop = () => {
   if (stopping) process.exit(1)
   stopping = true
-  console.log("\n\n⏸  stopping after current batch… (Ctrl-C again to force)")
-})
+  console.log("\n\n⏸  stopping after current batch… (signal again to force)")
+}
+process.on("SIGINT", onStop) // Ctrl-C
+process.on("SIGTERM", onStop) // kill / kill %1
 
 async function main() {
   console.log(`Atlas directory uploader`)
@@ -100,7 +139,15 @@ async function main() {
   const all = readdirSync(DIR).filter((n) => n.toLowerCase().endsWith(".png")).sort((a, b) => numKey(a) - numKey(b))
   if (!all.length) throw new Error(`no PNGs in ${DIR}`)
 
-  const done = loadCheckpoint()
+  const checkpoint = loadCheckpoint()
+  const done = new Set(checkpoint)
+  if (!values["no-reconcile"]) {
+    const onChain = await chainUploadedNames()
+    const newly = [...onChain].filter((n) => !checkpoint.has(n))
+    for (const n of onChain) done.add(n)
+    if (newly.length) appendFileSync(CHECKPOINT, newly.join("\n") + "\n")
+    console.log(`reconcile: ${onChain.size} already on-chain for this wallet (${newly.length} not in local checkpoint)`)
+  }
   const todo = all.filter((n) => !done.has(n))
   console.log(`${all.length} PNGs in dir, ${done.size} already uploaded, ${todo.length} to go\n`)
   if (!todo.length) {
