@@ -8,6 +8,9 @@
 
 import http from "node:http"
 import { parseArgs } from "node:util"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { dirname, join } from "node:path"
 import { makePublicClient } from "../src/lib/atlas.js"
 import { queryEntitiesRaw, fetchPayloadRaw } from "../src/lib/read.js"
 
@@ -20,6 +23,11 @@ const { values } = parseArgs({
 const PORT = Number(values.port)
 const DEFAULT_APP = values.app
 const reader = makePublicClient()
+
+// branding assets (favicon + social share card)
+const ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "assets")
+const OG_PNG = readFileSync(join(ASSETS, "og.png"))
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0d1117"/><rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#30363d" stroke-width="2"/><text x="32" y="35" font-size="38" text-anchor="middle" dominant-baseline="central">🐶</text></svg>`
 
 const attr = (e, k) => e.attributes.find((a) => a.key === k)?.value
 
@@ -80,11 +88,27 @@ function json(res, obj, status = 200) {
   res.end(body)
 }
 
+const SVG_HEAD = { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "public, max-age=86400" }
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://localhost:${PORT}`)
     if (url.pathname === "/healthz") return json(res, { ok: true })
-    if (url.pathname === "/") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }), res.end(PAGE)
+    if (url.pathname === "/") {
+      // absolute base URL so og:image works on any host (localhost or Dokploy domain)
+      const proto = (req.headers["x-forwarded-proto"] || "http").split(",")[0].trim()
+      const host = req.headers["x-forwarded-host"] || req.headers.host || `localhost:${PORT}`
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+      return res.end(PAGE.replaceAll("__BASE__", `${proto}://${host}`))
+    }
+    if (url.pathname === "/og.png") {
+      res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" })
+      return res.end(OG_PNG)
+    }
+    if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") {
+      res.writeHead(200, SVG_HEAD)
+      return res.end(FAVICON_SVG)
+    }
     if (url.pathname === "/api/images") return await apiImages(url, res)
     if (url.pathname.startsWith("/img/")) return await imgProxy(url.pathname.slice(5), res)
     res.writeHead(404, { "content-type": "text/plain" })
@@ -105,6 +129,19 @@ const PAGE = `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Atlas image viewer</title>
+<meta name="description" content="Browse images stored on-chain on the Atlas network." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="🐶 Atlas image viewer" />
+<meta property="og:description" content="Browse images stored on-chain on the Atlas network — queried live, streamed from the payload provider." />
+<meta property="og:url" content="__BASE__/" />
+<meta property="og:image" content="__BASE__/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="🐶 Atlas image viewer" />
+<meta name="twitter:description" content="Browse images stored on-chain on the Atlas network." />
+<meta name="twitter:image" content="__BASE__/og.png" />
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
