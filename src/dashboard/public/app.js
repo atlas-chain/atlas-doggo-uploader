@@ -506,10 +506,16 @@ const CH = {
 
 function setupCanvas(canvas) {
   const dpr = window.devicePixelRatio || 1
+  // The height attribute is the design height in CSS px — but assigning
+  // canvas.height below overwrites that same attribute with the dpr-scaled
+  // buffer size. Cache the design height once and pin the CSS height, or on
+  // dpr>1 displays every redraw would multiply the chart height by dpr.
+  if (!canvas.dataset.h) canvas.dataset.h = canvas.getAttribute("height") || "190"
+  const h = Number(canvas.dataset.h)
+  canvas.style.height = h + "px"
   const w = canvas.clientWidth || canvas.parentElement.clientWidth - 32
-  const h = Number(canvas.getAttribute("height"))
-  canvas.width = w * dpr
-  canvas.height = h * dpr
+  canvas.width = Math.round(w * dpr)
+  canvas.height = Math.round(h * dpr)
   const ctx = canvas.getContext("2d")
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, w, h)
