@@ -9,10 +9,10 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
 import { puzzleHash, leadingZeroBits, solveChallenge } from "../src/lib/faucet.js"
 import { makePng, makePngOfApproxSize } from "../src/lib/png.js"
-import { pickDog, listDogNames } from "../src/lib/images.js"
+import { pickDog, listDogNames, DOGS_DIR } from "../src/lib/images.js"
 
 const PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 
@@ -57,12 +57,16 @@ test("makePng emits a valid PNG that round-trips through Buffer", () => {
   assert.ok(approx.length > 80_000 && approx.length < 120_000, `size ${approx.length}`)
 })
 
-test("dog dataset is present and files are real PNGs", () => {
-  const names = listDogNames(5)
-  assert.ok(names.length > 0, "no dog images found")
-  const bytes = readFileSync(pickDog())
-  assert.ok(bytes.subarray(0, 8).equals(PNG_MAGIC), "dog file is not a PNG")
-})
+test(
+  "dog dataset is present and files are real PNGs",
+  { skip: existsSync(DOGS_DIR) ? false : "dog dataset not present (dropped in locally, not in repo)" },
+  () => {
+    const names = listDogNames(5)
+    assert.ok(names.length > 0, "no dog images found")
+    const bytes = readFileSync(pickDog())
+    assert.ok(bytes.subarray(0, 8).equals(PNG_MAGIC), "dog file is not a PNG")
+  }
+)
 
 test(
   "live: upload + download round-trip on Atlas",
