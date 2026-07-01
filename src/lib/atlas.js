@@ -7,12 +7,12 @@ import { dirname, join } from "node:path"
 import { createWalletClient, createPublicClient, http } from "@atlas-chain/sdk"
 import { privateKeyToAccount } from "@atlas-chain/sdk/accounts"
 import { atlas } from "@atlas-chain/sdk/chains"
-import { Agent, fetch as undiciFetch } from "undici"
 
 // --- Live Atlas endpoints (the bundled SDK URL is overridden on purpose) ---
 export const RPC_URL = "https://rpc.atlas.arkiv-global.net/"
 export const PAYLOAD_URL = "https://payload.atlas.arkiv-global.net"
 export const FAUCET_URL = "https://faucet.atlas.arkiv-global.net"
+export const SCANNER_URL = "https://scanner.atlas.arkiv-global.net"
 export const NAMESPACE = "arkiv.entities"
 // Current public sandbox ingress key for the payload provider's upload endpoint.
 export const DEFAULT_BEARER_KEY = "atlas-signer-pub-token"
@@ -21,23 +21,9 @@ export const CHAIN = atlas
 // quantizes waitForTransactionReceipt and ~doubles per-tx latency (blocks are
 // 2s). 500ms detects inclusion promptly without hammering the RPC.
 export const POLLING_INTERVAL = Number(process.env.ATLAS_POLLING_MS || 500)
-// A batch uploads up to ~50 payloads in parallel. Node's default fetch pool can
-// serialize these on some setups (few connections), turning a ~0.2s upload phase
-// into seconds. A dedicated high-concurrency keep-alive dispatcher forces true
-// parallelism. Tune/disable via ATLAS_HTTP_CONNECTIONS (0 = use global fetch).
-const HTTP_CONNECTIONS = Number(process.env.ATLAS_HTTP_CONNECTIONS || 128)
-const uploadDispatcher =
-  HTTP_CONNECTIONS > 0
-    ? new Agent({
-        connections: HTTP_CONNECTIONS,
-        pipelining: 1,
-        keepAliveTimeout: 60_000,
-        keepAliveMaxTimeout: 120_000,
-      })
-    : null
-export const pooledFetch = uploadDispatcher
-  ? (input, init = {}) => undiciFetch(input, { ...init, dispatcher: uploadDispatcher })
-  : undefined
+// A batch uploads up to ~50 payloads in parallel. Bun's native fetch keeps a
+// large keep-alive pool per host (256 by default, BUN_CONFIG_MAX_HTTP_REQUESTS
+// to tune), so the dedicated undici dispatcher the Node version needed is gone.
 
 // Project root = two levels up from src/lib/
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
@@ -93,7 +79,6 @@ export function makeWalletClient(privateKey = getPrivateKey()) {
       url: PAYLOAD_URL,
       namespace: NAMESPACE,
       bearerKey: getBearerKey(),
-      ...(pooledFetch && { fetch: pooledFetch }),
     },
   })
 }
@@ -107,7 +92,6 @@ export function makePublicClient() {
     payloadProvider: {
       url: PAYLOAD_URL,
       namespace: NAMESPACE,
-      ...(pooledFetch && { fetch: pooledFetch }),
     },
   })
 }

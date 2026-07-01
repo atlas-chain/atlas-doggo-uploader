@@ -9,3 +9,8 @@ node_modules/
 out/
 downloaded*.png
 *.tmp
+
+# scratch screenshots at repo root (docs/ images stay tracked)
+/*.png
+# local scratch notes (contains throwaway keys) — never commit
+notes.md

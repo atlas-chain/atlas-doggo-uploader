@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas doggo uploader — live</title>
+<meta name="description" content="Real-time dashboard for uploads to the Atlas (Arkiv) data network." />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header id="topbar">
+  <div class="wordmark"><span class="bracket">[</span> ATLAS <span class="bracket">]</span> <span class="sub">DOGGO&nbsp;UPLOADER</span></div>
+  <div class="head-meta">
+    <span id="head-app" class="chip" hidden></span>
+    <a id="head-wallet" class="chip mono" target="_blank" rel="noopener" hidden></a>
+    <span id="head-block" class="chip mono" hidden></span>
+  </div>
+  <div class="head-right">
+    <span id="linger-head" class="linger mono" hidden></span>
+    <button id="btn-stop" class="ghost" hidden>stop after batch</button>
+    <span id="conn" class="conn mono" title="dashboard connection">●</span>
+    <span id="status-pill" class="pill mono">connecting</span>
+  </div>
+</header>
+
+<main>
+  <div id="waiting" class="waiting mono">[ waiting for the uploader to start… ]</div>
+
+  <section id="banner" class="banner" hidden>
+    <div class="banner-title mono" id="banner-title"></div>
+    <div class="banner-body" id="banner-body"></div>
+    <div class="banner-actions">
+      <span class="mono" id="banner-countdown"></span>
+      <button id="btn-extend" class="ghost">keep for another 60 min</button>
+    </div>
+  </section>
+
+  <section id="sec-progress">
+    <h2 class="label mono">[ run progress ]</h2>
+    <div class="hero-row">
+      <div class="hero-count mono"><span id="p-done">0</span><span class="dim"> / </span><span id="p-total">0</span><span class="dim hero-unit"> files</span></div>
+      <div class="hero-pct mono" id="p-pct">0.0%</div>
+    </div>
+    <div class="progress" id="progressbar" title="green: confirmed · blue: in current batch · red: failed">
+      <div class="seg seg-done" id="seg-done"></div>
+      <div class="seg seg-cur" id="seg-cur"></div>
+      <div class="seg seg-fail" id="seg-fail"></div>
+    </div>
+    <div class="progress-sub mono" id="p-sub"></div>
+  </section>
+
+  <section id="sec-tiles">
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section id="sec-pipeline">
+    <h2 class="label mono">[ commitment pipeline — batch <span id="pl-batch">—</span> ]</h2>
+    <div class="pipeline">
+      <div class="stage" id="st-payload">
+        <div class="stage-head mono"><span class="stage-num">1</span> payload upload</div>
+        <div class="stage-big mono" id="st-payload-big">—</div>
+        <div class="stage-sub mono" id="st-payload-sub"></div>
+        <div class="dots" id="st-dots"></div>
+      </div>
+      <div class="arrow mono">→</div>
+      <div class="stage" id="st-chain">
+        <div class="stage-head mono"><span class="stage-num">2</span> send to blockchain</div>
+        <div class="stage-big mono" id="st-chain-big">—</div>
+        <div class="stage-sub mono" id="st-chain-sub"></div>
+      </div>
+      <div class="arrow mono">→</div>
+      <div class="stage" id="st-receipt">
+        <div class="stage-head mono"><span class="stage-num">3</span> receive receipt</div>
+        <div class="stage-big mono" id="st-receipt-big">—</div>
+        <div class="stage-sub mono" id="st-receipt-sub"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="charts-row">
+    <div class="panel">
+      <h2 class="label mono">[ upload throughput ]</h2>
+      <div class="legend mono"><i style="background:var(--ark-blue)"></i>MB/s<i style="background:var(--ark-orange)"></i>files/min</div>
+      <canvas id="ch-throughput" height="190"></canvas>
+    </div>
+    <div class="panel">
+      <h2 class="label mono">[ batch commit latency ]</h2>
+      <div class="legend mono"><i style="background:var(--ark-blue)"></i>payload<i style="background:var(--ark-orange)"></i>tx submit<i style="background:var(--op-purple)"></i>receipt wait</div>
+      <canvas id="ch-batches" height="190"></canvas>
+    </div>
+  </section>
+
+  <section class="charts-row">
+    <div class="panel">
+      <h2 class="label mono">[ wallet balance ]</h2>
+      <div class="legend mono"><i style="background:var(--ok)"></i><span id="lg-cur">GLM</span><i style="background:var(--ark-orange)"></i>faucet drip</div>
+      <canvas id="ch-balance" height="170"></canvas>
+    </div>
+    <div class="panel">
+      <h2 class="label mono">[ latency percentiles — recent ]</h2>
+      <div class="pcts" id="pcts"></div>
+    </div>
+  </section>
+
+  <section class="split-row">
+    <div class="panel">
+      <h2 class="label mono">[ recent files ]</h2>
+      <table class="files mono" id="files-table">
+        <thead><tr><th></th><th>file</th><th class="r">size</th><th class="r">upload</th><th class="r">speed</th><th>tx</th><th>payload</th></tr></thead>
+        <tbody id="files-body"></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2 class="label mono">[ event log ]</h2>
+      <div class="log mono" id="log"></div>
+    </div>
+  </section>
+
+  <section id="sec-doggos" hidden>
+    <h2 class="label mono">[ fresh doggos on-chain 🐶 ]</h2>
+    <div class="doggos" id="doggos"></div>
+  </section>
+
+  <footer class="mono">
+    <span id="ft-net"></span>
+    <span id="ft-ver"></span>
+  </footer>
+</main>
+
+<div id="offline" class="offline mono" hidden>[ dashboard server has shut down — this page is a snapshot ]</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

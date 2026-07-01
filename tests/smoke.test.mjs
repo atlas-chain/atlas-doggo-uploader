@@ -1,13 +1,13 @@
-// Basic functional tests for the Atlas hello-world foundation.
+// Basic functional tests for the Atlas uploader foundation.
 //
-//   node --test tests/            # offline tests (no network)
-//   ATLAS_E2E=1 node --test tests/ # also runs the live upload/download round-trip
+//   bun test tests/               # offline tests (no network)
+//   ATLAS_E2E=1 bun test tests/   # also runs the live upload/download round-trip
 //
 // The offline tests pin the faucet proof-of-work to be byte-identical with the
 // Rust faucet (atlas-faucet/src/pow.rs browser_parity_vector), so we never burn
 // a real challenge to discover a wire-format bug.
 
-import { test } from "node:test"
+import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFileSync, existsSync } from "node:fs"
 import { puzzleHash, leadingZeroBits, solveChallenge } from "../src/lib/faucet.js"
@@ -57,20 +57,17 @@ test("makePng emits a valid PNG that round-trips through Buffer", () => {
   assert.ok(approx.length > 80_000 && approx.length < 120_000, `size ${approx.length}`)
 })
 
-test(
-  "dog dataset is present and files are real PNGs",
-  { skip: existsSync(DOGS_DIR) ? false : "dog dataset not present (dropped in locally, not in repo)" },
-  () => {
-    const names = listDogNames(5)
-    assert.ok(names.length > 0, "no dog images found")
-    const bytes = readFileSync(pickDog())
-    assert.ok(bytes.subarray(0, 8).equals(PNG_MAGIC), "dog file is not a PNG")
-  }
-)
+// skipped when the dataset isn't present (it's dropped in locally, not in the repo)
+test.skipIf(!existsSync(DOGS_DIR))("dog dataset is present and files are real PNGs", () => {
+  const names = listDogNames(5)
+  assert.ok(names.length > 0, "no dog images found")
+  const bytes = readFileSync(pickDog())
+  assert.ok(bytes.subarray(0, 8).equals(PNG_MAGIC), "dog file is not a PNG")
+})
 
-test(
+// set ATLAS_E2E=1 to run against the live network
+test.skipIf(!process.env.ATLAS_E2E)(
   "live: upload + download round-trip on Atlas",
-  { skip: process.env.ATLAS_E2E ? false : "set ATLAS_E2E=1 to run" },
   async () => {
     const { createHash } = await import("node:crypto")
     const { ExpirationTime } = await import("@atlas-chain/sdk/utils")

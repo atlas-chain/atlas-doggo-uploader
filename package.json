@@ -1,26 +1,25 @@
 {
   "name": "atlas-doggo-uploader",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Hello-world + load-test apps for the Atlas (experimental Arkiv) data network",
+  "description": "Bun-powered batch uploader for the Atlas (experimental Arkiv) data network, with a real-time commitment-pipeline dashboard",
   "scripts": {
-    "account": "node scripts/gen-account.mjs",
-    "new-wallet": "node scripts/new-wallet.mjs",
-    "fund": "node scripts/fund.mjs",
-    "hello": "node scripts/hello.mjs",
-    "bench": "node scripts/upload-bench.mjs",
-    "upload-dir": "node scripts/upload-dir.mjs",
+    "account": "bun scripts/gen-account.mjs",
+    "new-wallet": "bun scripts/new-wallet.mjs",
+    "fund": "bun scripts/fund.mjs",
+    "hello": "bun scripts/hello.mjs",
+    "bench": "bun scripts/upload-bench.mjs",
+    "upload-dir": "bun scripts/upload-dir.mjs",
     "upload": "scripts/upload-docker.sh",
-    "probe-net": "node scripts/probe-net.mjs",
-    "viewer": "node scripts/viewer-server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "probe-net": "bun scripts/probe-net.mjs",
+    "viewer": "bun scripts/viewer-server.mjs",
+    "test": "bun test tests/"
   },
   "dependencies": {
-    "@atlas-chain/sdk": "^0.6.15",
-    "undici": "^6.27.0"
+    "@atlas-chain/sdk": "^0.6.15"
   },
   "engines": {
-    "node": ">=20"
+    "bun": ">=1.2"
   }
 }

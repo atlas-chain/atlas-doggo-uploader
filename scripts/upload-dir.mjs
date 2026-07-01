@@ -1,231 +1,195 @@
-// Production uploader: push every PNG in a directory to Atlas, in order, in
-// batches, from a single wallet. Built to run unattended for hours:
-//   - resumable: a checkpoint file records uploaded files; restarts skip them
-//   - self-sustaining: auto-tops-up from the faucet when balance runs low
-//   - resilient: retries transient errors, skips persistently-failing batches
-//   - graceful: Ctrl-C finishes the current batch, flushes, and reports
+// Atlas doggo uploader — CLI entry point.
 //
-// Usage:
-//   ATLAS_PRIVATE_KEY=0x... node scripts/upload-dir.mjs --dir /path/to/pngs \
-//       [--batch 10] [--app dogs] [--expires-days 30] [--min-balance 0.3] [--no-autofund]
+// Runs the upload engine and (by default) the live dashboard in one process:
+// the engine streams every PNG in a directory onto Atlas in batched
+// transactions while the dashboard shows per-file progress, the commitment
+// pipeline (payload upload → tx → receipt), throughput/latency charts, wallet
+// balance and an event log — and stays reachable for --linger-min after the
+// run so you can inspect the result.
 //
-// The viewer can then show just this run via the owner (wallet) address.
+//   ATLAS_PRIVATE_KEY=0x… bun scripts/upload-dir.mjs --dir /path/to/pngs
 
 import { parseArgs } from "node:util"
-import { readFileSync, readdirSync, appendFileSync, existsSync, mkdirSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, join, basename, isAbsolute } from "node:path"
-import { formatEther, parseEther } from "@atlas-chain/sdk"
-import { ExpirationTime } from "@atlas-chain/sdk/utils"
-import { makeWalletClient, accountAddress } from "../src/lib/atlas.js"
-import { claimWithCooldown } from "../src/lib/faucet.js"
-import { queryEntitiesRaw } from "../src/lib/read.js"
+import { dirname, join, isAbsolute } from "node:path"
+import { createBus, makeInstrumentedClient } from "../src/uploader/instrument.js"
+import { createEngine } from "../src/uploader/engine.js"
+import { createStats } from "../src/uploader/stats.js"
+import { startDashboard } from "../src/dashboard/server.js"
 import { DOGS_DIR } from "../src/lib/images.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
-const now = () => Date.now()
 
-const { values } = parseArgs({
-  options: {
-    dir: { type: "string" },
-    batch: { type: "string", default: "10" },
-    app: { type: "string", default: "dogs" },
-    run: { type: "string" },
-    "expires-days": { type: "string", default: "30" },
-    "min-balance": { type: "string", default: "0.3" },
-    "no-autofund": { type: "boolean", default: false },
-    "no-reconcile": { type: "boolean", default: false },
-  },
-})
+const USAGE = `Atlas doggo uploader — push every PNG in a directory to Atlas, with a live dashboard.
 
-const DIR = values.dir ? (isAbsolute(values.dir) ? values.dir : join(process.cwd(), values.dir)) : DOGS_DIR
-const BATCH = Math.min(50, Math.max(1, Number(values.batch)))
-const APP = values.app
-const RUN_ID = values.run ?? APP
-const EXPIRES = ExpirationTime.fromDays(Number(values["expires-days"]))
-const MIN_WEI = parseEther(values["min-balance"])
-const AUTOFUND = !values["no-autofund"]
+Usage:
+  ATLAS_PRIVATE_KEY=0x… bun scripts/upload-dir.mjs --dir /path/to/pngs [options]
 
-const address = accountAddress()
-const client = makeWalletClient()
-const balance = () => client.getBalance({ address })
+Options:
+  --dir <path>          directory of PNGs (default: the ../Images/Dogs dataset)
+  --batch <n>           images per transaction, 1-50            (default 10)
+  --app <name>          "app" attribute used for grouping       (default dogs)
+  --run <id>            "run" attribute                         (default: app)
+  --limit <n>           upload at most n files this run
+  --expires-days <n>    entity TTL in days                      (default 30)
+  --min-balance <glm>   faucet refill threshold                 (default 0.3)
+  --no-autofund         never claim from the faucet
+  --no-reconcile        skip the on-chain duplicate check
+  --port <n>            dashboard port                          (default $PORT or 3000)
+  --linger-min <n>      keep the dashboard up n minutes after the run finishes
+                        (default 60; 0 = exit immediately)
+  --no-dashboard        headless: no web dashboard
+  -h, --help            show this help
+`
 
-// numeric-aware sort so dog_2 < dog_10 ("po kolei")
-const numKey = (n) => {
-  const m = /(\d+)/.exec(n)
-  return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER
-}
-
-mkdirSync(join(ROOT, "out"), { recursive: true })
-const CHECKPOINT = join(ROOT, "out", `upload-${APP}.checkpoint`)
-const FAILURES = join(ROOT, "out", `upload-${APP}.failures`)
-
-function loadCheckpoint() {
-  if (!existsSync(CHECKPOINT)) return new Set()
-  return new Set(readFileSync(CHECKPOINT, "utf8").split("\n").filter(Boolean))
-}
-
-// Reconcile against the chain: collect the `name` attribute of every entity this
-// wallet already uploaded for this app. Makes restarts duplicate-proof even with
-// no local checkpoint (e.g. moving to a fresh server) or after a hard kill.
-async function chainUploadedNames() {
-  // NOTE: the RPC caps results per page (~200) regardless of the requested
-  // limit, so we MUST paginate by cursor until it's exhausted — never stop on
-  // a short page, or we'd miss most entities and re-upload them (duplicates).
-  const names = new Set()
-  let cursor
-  let pages = 0
-  for (;;) {
-    let page
-    try {
-      page = await queryEntitiesRaw(client, {
-        filters: { app: APP },
-        ownedBy: address,
-        limit: 1000,
-        cursor,
-        withMetadata: false,
-      })
-    } catch (e) {
-      console.warn(`\n  reconcile: chain query failed (${e.message}) — using local checkpoint only`)
-      break
-    }
-    for (const e of page.entities) {
-      const n = e.attributes.find((a) => a.key === "name")?.value
-      if (n) names.add(n)
-    }
-    pages++
-    process.stdout.write(`  reconciling with chain… ${names.size} found (page ${pages})\r`)
-    if (!page.cursor || page.cursor === cursor || page.entities.length === 0) break
-    cursor = page.cursor
-  }
-  if (pages) process.stdout.write("\n")
-  return names
-}
-
-async function ensureBalance() {
-  if (!AUTOFUND) return
-  let bal = await balance()
-  while (bal < MIN_WEI) {
-    console.log(`\n  balance ${formatEther(bal)} GLM < ${values["min-balance"]} — topping up from faucet…`)
-    try {
-      await claimWithCooldown(address, { onWait: (s) => process.stdout.write(`  faucet cooldown ${s}s…\n`) })
-    } catch (e) {
-      console.error(`  faucet top-up failed: ${e.message} — retrying in 30s`)
-      await new Promise((r) => setTimeout(r, 30000))
-    }
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000))
-      if ((await balance()) > bal) break
-    }
-    bal = await balance()
-    console.log(`  balance now ${formatEther(bal)} GLM`)
-  }
-}
-
-let stopping = false
-const onStop = () => {
-  if (stopping) process.exit(1)
-  stopping = true
-  console.log("\n\n⏸  stopping after current batch… (signal again to force)")
-}
-process.on("SIGINT", onStop) // Ctrl-C
-process.on("SIGTERM", onStop) // kill / kill %1
-
-async function main() {
-  console.log(`Atlas directory uploader`)
-  console.log(`  wallet  : ${address}`)
-  console.log(`  dir     : ${DIR}`)
-  console.log(`  batch   : ${BATCH}   app: ${APP}   run: ${RUN_ID}   expires: ${values["expires-days"]}d`)
-  console.log(`  balance : ${formatEther(await balance())} GLM   autofund: ${AUTOFUND}\n`)
-
-  const all = readdirSync(DIR).filter((n) => n.toLowerCase().endsWith(".png")).sort((a, b) => numKey(a) - numKey(b))
-  if (!all.length) throw new Error(`no PNGs in ${DIR}`)
-
-  const checkpoint = loadCheckpoint()
-  const done = new Set(checkpoint)
-  if (!values["no-reconcile"]) {
-    const onChain = await chainUploadedNames()
-    const newly = [...onChain].filter((n) => !checkpoint.has(n))
-    for (const n of onChain) done.add(n)
-    if (newly.length) appendFileSync(CHECKPOINT, newly.join("\n") + "\n")
-    console.log(`reconcile: ${onChain.size} already on-chain for this wallet (${newly.length} not in local checkpoint)`)
-  }
-  const todo = all.filter((n) => !done.has(n))
-  console.log(`${all.length} PNGs in dir, ${done.size} already uploaded, ${todo.length} to go\n`)
-  if (!todo.length) {
-    console.log("nothing to do — directory already fully uploaded for this app.")
-    return
-  }
-
-  const t0 = now()
-  let uploaded = 0
-  let failed = 0
-  let lastLog = 0
-
-  for (let i = 0; i < todo.length && !stopping; i += BATCH) {
-    const slice = todo.slice(i, i + BATCH)
-    await ensureBalance()
-
-    const creates = slice.map((name) => ({
-      payload: new Uint8Array(readFileSync(join(DIR, name))),
-      contentType: "image/png",
-      attributes: [
-        { key: "app", value: APP },
-        { key: "name", value: name },
-        { key: "run", value: RUN_ID },
-        { key: "seq", value: numKey(name) },
-      ],
-      expiresIn: EXPIRES,
-    }))
-
-    let ok = false
-    for (let attempt = 0; attempt < 3 && !ok && !stopping; attempt++) {
-      try {
-        await client.mutateEntities({ creates })
-        ok = true
-      } catch (e) {
-        const msg = e.message || String(e)
-        if (/insufficient funds|Insufficient/i.test(msg) && AUTOFUND) {
-          await ensureBalance()
-        } else {
-          if (attempt === 2) {
-            failed += slice.length
-            appendFileSync(FAILURES, slice.map((n) => `${n}\t${msg.replace(/\s+/g, " ").slice(0, 200)}`).join("\n") + "\n")
-            console.error(`\n  ✗ batch failed (${slice.length} imgs) after retries: ${msg.slice(0, 120)}`)
-          } else {
-            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
-          }
-        }
-      }
-    }
-
-    if (ok) {
-      appendFileSync(CHECKPOINT, slice.join("\n") + "\n")
-      uploaded += slice.length
-    }
-
-    if (now() - lastLog > 5000 || i + BATCH >= todo.length) {
-      lastLog = now()
-      const secs = (now() - t0) / 1000
-      const rate = uploaded / secs
-      const remaining = todo.length - uploaded - failed
-      const eta = rate > 0 ? remaining / rate : 0
-      process.stdout.write(
-        `  ${uploaded}/${todo.length} uploaded (${failed} failed) · ${rate.toFixed(1)} img/s · ETA ${(eta / 60).toFixed(0)}m       \r`,
-      )
-    }
-  }
-
-  const secs = (now() - t0) / 1000
-  console.log(`\n\n── ${stopping ? "stopped" : "done"} ──`)
-  console.log(`uploaded this run : ${uploaded}  (${failed} failed)`)
-  console.log(`total in dataset  : ${loadCheckpoint().size}/${all.length}`)
-  console.log(`elapsed           : ${(secs / 60).toFixed(1)} min  ·  ${(uploaded / secs).toFixed(2)} img/s`)
-  console.log(`balance left      : ${formatEther(await balance())} GLM`)
-  console.log(`\nview only this wallet:  OWNER=${address} npm run viewer -- --port 8799`)
-}
-
-main().catch((e) => {
-  console.error("\nuploader crashed:", e)
+let values
+try {
+  values = parseArgs({
+    options: {
+      dir: { type: "string" },
+      batch: { type: "string", default: "10" },
+      app: { type: "string", default: "dogs" },
+      run: { type: "string" },
+      limit: { type: "string" },
+      "expires-days": { type: "string", default: "30" },
+      "min-balance": { type: "string", default: "0.3" },
+      "no-autofund": { type: "boolean", default: false },
+      "no-reconcile": { type: "boolean", default: false },
+      port: { type: "string", default: process.env.PORT ?? "3000" },
+      "linger-min": { type: "string", default: "60" },
+      "no-dashboard": { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
+  }).values
+} catch (e) {
+  console.error(`${e.message}\n\n${USAGE}`)
   process.exit(1)
+}
+
+if (values.help) {
+  console.log(USAGE)
+  process.exit(0)
+}
+
+const dir = values.dir
+  ? isAbsolute(values.dir)
+    ? values.dir
+    : join(process.cwd(), values.dir)
+  : DOGS_DIR
+if (!existsSync(dir)) {
+  console.error(`directory not found: ${dir}\n\n${USAGE}`)
+  process.exit(1)
+}
+
+const config = {
+  dir,
+  batch: Math.min(50, Math.max(1, Number(values.batch))),
+  app: values.app,
+  runId: values.run ?? values.app,
+  expiresDays: Number(values["expires-days"]),
+  minBalance: values["min-balance"],
+  autofund: !values["no-autofund"],
+  reconcile: !values["no-reconcile"],
+  limit: values.limit ? Math.max(1, Number(values.limit)) : null,
+}
+
+const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"))
+
+// ---- wire everything together ----------------------------------------------
+const bus = createBus()
+const stats = createStats(bus, { version: `v${pkg.version}` })
+const client = makeInstrumentedClient(bus)
+const engine = createEngine({ client, bus, config })
+
+let dash = null
+if (!values["no-dashboard"]) {
+  dash = startDashboard({
+    stats,
+    engine,
+    port: Number(values.port),
+    lingerMin: Number(values["linger-min"]),
+    onExit: () => process.exit(exitCode),
+  })
+}
+
+// ---- console renderer -------------------------------------------------------
+const fmtGlm = (wei) => (wei == null ? "?" : (Number(wei) / 1e18).toFixed(3))
+let progressActive = false
+const clearProgress = () => {
+  if (progressActive) {
+    process.stdout.write("\r" + " ".repeat(100) + "\r")
+    progressActive = false
+  }
+}
+
+bus.on("run:init", (d) => {
+  console.log(`Atlas doggo uploader ${stats.state.version}`)
+  console.log(`  wallet  : ${d.wallet}`)
+  console.log(`  dir     : ${d.dir}`)
+  console.log(
+    `  batch   : ${d.batch}   app: ${d.app}   run: ${d.runId}   expires: ${d.expiresDays}d` +
+      (d.limit ? `   limit: ${d.limit}` : ""),
+  )
+  if (dash) console.log(`  dashboard → ${dash.url}`)
+  console.log("")
 })
+bus.on("reconcile:page", ({ found, page }) => {
+  process.stdout.write(`  reconciling with chain… ${found} found (page ${page})\r`)
+  progressActive = true
+})
+stats.onDelta((m) => {
+  if (m.type !== "ev") return
+  clearProgress()
+  const tag = m.level === "error" ? "✗" : m.level === "warn" ? "!" : "·"
+  console.log(`  ${tag} ${m.msg}`)
+})
+
+const progressTimer = setInterval(() => {
+  const s = stats.state
+  if (s.status !== "uploading" || !s.plan.planned) return
+  const fpm = s.series.fpm.at(-1) ?? 0
+  const remaining = s.plan.planned - s.totals.uploaded - s.totals.failed
+  const eta = fpm > 0 ? remaining / fpm : null
+  const mbps = ((s.series.bps.at(-1) ?? 0) / 1e6).toFixed(2)
+  process.stdout.write(
+    `  ${s.totals.uploaded}/${s.plan.planned} uploaded (${s.totals.failed} failed) · ${fpm} img/min · ${mbps} MB/s · balance ${fmtGlm(s.balanceWei)} · ETA ${eta != null ? eta.toFixed(0) + "m" : "?"}   \r`,
+  )
+  progressActive = true
+}, 5000)
+
+// ---- signals ----------------------------------------------------------------
+let finished = false
+let exitCode = 0
+const onStop = () => {
+  if (finished || engine.stopping) process.exit(exitCode || 1)
+  engine.stop()
+}
+process.on("SIGINT", onStop)
+process.on("SIGTERM", onStop)
+
+// ---- run --------------------------------------------------------------------
+try {
+  const { uploaded, failed, stopped } = await engine.run()
+  clearProgress()
+  console.log(`\n── ${stopped ? "stopped" : "done"} ──`)
+  console.log(`uploaded this run : ${uploaded}  (${failed} failed)`)
+  console.log(`fees spent        : ${fmtGlm(stats.state.totals.feeWei)} GLM in ${stats.state.totals.txCount} txs`)
+  console.log(`balance left      : ${fmtGlm(stats.state.balanceWei)} GLM`)
+  if (failed) exitCode = 2
+} catch (e) {
+  clearProgress()
+  bus.emit("run:error", { error: e.message ?? String(e) })
+  console.error("\nuploader crashed:", e)
+  exitCode = 1
+} finally {
+  clearInterval(progressTimer)
+  finished = true
+}
+
+if (dash) {
+  console.log(`\ndashboard stays up at ${dash.url} — Ctrl-C to exit now`)
+  dash.beginLinger()
+} else {
+  process.exit(exitCode)
+}
