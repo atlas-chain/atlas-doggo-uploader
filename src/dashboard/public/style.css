@@ -55,7 +55,7 @@ button:hover { background: var(--stone); }
 /* ---- masthead ---- */
 #topbar {
   position: sticky; top: 0; z-index: 50;
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap;
   background: var(--ink); color: #f6f4ef;
   padding: 10px 20px;
   border-bottom: 3px solid var(--ark-orange);
@@ -96,6 +96,7 @@ main { max-width: 1360px; margin: 0 auto; padding: 20px 20px 60px; display: flex
 .panel {
   background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--r-md);
   padding: 14px 16px;
+  overflow-x: auto; /* wide tables scroll inside their panel, never the page */
 }
 .panel .label { margin-bottom: 8px; }
 .waiting { color: var(--ink-muted); padding: 60px 0; text-align: center; font-size: 13px; }
@@ -112,14 +113,14 @@ main { max-width: 1360px; margin: 0 auto; padding: 20px 20px 60px; display: flex
 .banner-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
 .banner-actions .mono { font-size: 12px; color: var(--ink-muted); }
 
-/* ---- progress hero ---- */
-.hero-row { display: flex; align-items: baseline; gap: 18px; }
-.hero-count { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+/* ---- progress hero (fluid type: never dominates small screens) ---- */
+.hero-row { display: flex; align-items: baseline; gap: 12px 18px; flex-wrap: wrap; }
+.hero-count { font-size: clamp(21px, 2.6vw, 32px); font-weight: 700; letter-spacing: -0.02em; }
 .hero-count .dim { color: var(--ink-muted); font-weight: 400; }
-.hero-unit { font-size: 16px; letter-spacing: 0; }
-.hero-pct { margin-left: auto; font-size: 28px; font-weight: 500; color: var(--ark-blue); }
+.hero-unit { font-size: clamp(12px, 1.2vw, 15px); letter-spacing: 0; }
+.hero-pct { margin-left: auto; font-size: clamp(16px, 1.8vw, 22px); font-weight: 500; color: var(--ark-blue); }
 .progress {
-  height: 18px; border: 1px solid var(--line-strong); border-radius: 99px; overflow: hidden;
+  height: 14px; border: 1px solid var(--line-strong); border-radius: 99px; overflow: hidden;
   display: flex; background: repeating-linear-gradient(-45deg, var(--stone), var(--stone) 6px, var(--sand) 6px, var(--sand) 12px);
   margin-top: 10px;
 }
@@ -133,7 +134,7 @@ main { max-width: 1360px; margin: 0 auto; padding: 20px 20px 60px; display: flex
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; }
 .tile { background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--r-md); padding: 10px 12px; min-height: 64px; }
 .tile .k { font: 500 9.5px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted); display: block; margin-bottom: 5px; }
-.tile .v { font: 700 19px var(--font-mono); letter-spacing: -0.01em; white-space: nowrap; }
+.tile .v { font: 700 17px var(--font-mono); letter-spacing: -0.01em; white-space: nowrap; }
 .tile .u { font: 400 11px var(--font-mono); color: var(--ink-muted); margin-left: 3px; }
 .tile .s { display: block; font: 400 10px var(--font-mono); color: var(--ink-muted); margin-top: 3px; }
 .tile.accent .v { color: var(--ark-blue); }
@@ -156,7 +157,7 @@ main { max-width: 1360px; margin: 0 auto; padding: 20px 20px 60px; display: flex
 }
 .stage.active .stage-num { background: var(--ark-blue); border-color: var(--ark-blue); color: #fff; }
 .stage.landed .stage-num { background: var(--ok); border-color: var(--ok); color: #fff; }
-.stage-big { font-size: 24px; font-weight: 700; margin-top: 10px; }
+.stage-big { font-size: clamp(16px, 1.6vw, 21px); font-weight: 700; margin-top: 10px; word-break: break-all; }
 .stage-sub { font-size: 11px; color: var(--ink-muted); margin-top: 4px; min-height: 16px; word-break: break-all; }
 .arrow { display: flex; align-items: center; justify-content: center; color: var(--stone-2); font-size: 22px; }
 .arrow.flow { color: var(--ark-orange); animation: pulse 1s ease-in-out infinite; }
@@ -257,5 +258,10 @@ table.sessions .dim2 { color: var(--ink-muted); font-size: 10.5px; }
   .charts-row, .split-row { grid-template-columns: 1fr; }
   .pipeline { grid-template-columns: 1fr; }
   .arrow { transform: rotate(90deg); padding: 2px 0; }
-  .hero-count { font-size: 28px; }
+}
+@media (max-width: 640px) {
+  #topbar { padding: 8px 12px; gap: 8px 10px; }
+  .wordmark .sub { display: none; }
+  main { padding: 14px 12px 40px; }
+  .head-right { margin-left: 0; }
 }

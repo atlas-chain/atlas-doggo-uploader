@@ -1,6 +1,6 @@
 {
   "name": "atlas-doggo-uploader",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Bun-powered batch uploader for the Atlas (experimental Arkiv) data network, with a real-time commitment-pipeline dashboard",
