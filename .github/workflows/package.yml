@@ -41,7 +41,7 @@ jobs:
 
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: cmd0s/atlas-apps
+      IMAGE_NAME: atlas-chain/atlas-doggo-uploader
 
     steps:
       - name: Check out repository
