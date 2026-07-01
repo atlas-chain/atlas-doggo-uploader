@@ -13,16 +13,25 @@ Bun-powered batch uploader for the [Atlas](https://scanner.atlas.arkiv-global.ne
 - **Duplicate-proof restarts** — a local checkpoint plus on-chain reconciliation (paginated `arkiv_query` by owner+app) means re-runs and fresh servers never re-upload.
 - **Lingering dashboard** — after the run finishes the dashboard stays up (default **60 min**, `--linger-min`), shows the final summary and a countdown, and can be extended from the page; then the process exits on its own.
 
-## Quickstart
+## Quickstart — always-on server
 
 ```bash
 bun install
-bun run new-wallet          # writes a throwaway key to .env
-bun scripts/upload-dir.mjs --dir /path/to/pngs --app my-dogs --batch 10
-# dashboard → http://localhost:3000
+ATLAS_ADMIN_TOKEN=change-me bun run serve   # → http://localhost:3000
 ```
 
-The wallet funds itself from the faucet on first need. Stop any time with Ctrl-C (finishes the current batch) or the dashboard's *stop after batch* button.
+The server stays up permanently: the home page lists every upload session ever run (persisted in a `bun:sqlite` database at `out/sessions.db`), running ones update live, and with the **admin token** you can start, stop and delete sessions right from the page. Viewing needs no token. Each session gets its own dashboard at `/s/<id>` — live while running, reconstructed from SQLite afterwards, forever (delete is explicit and admin-only). Sessions killed by a server restart are marked `interrupted`, keeping everything recorded up to that point.
+
+New sessions either use the server wallet (`ATLAS_PRIVATE_KEY`) or generate a **fresh throwaway wallet** that self-funds from the faucet — fresh wallets let several sessions (different apps) run concurrently. If `ATLAS_ADMIN_TOKEN` is unset a random token is generated and printed at boot.
+
+## One-shot mode
+
+```bash
+bun run new-wallet          # writes a throwaway key to .env
+bun scripts/upload-dir.mjs --dir /path/to/pngs --app my-dogs --batch 10
+```
+
+Runs a single upload with the same live dashboard, keeps it up `--linger-min` (default 60) after finishing, then exits. Stop any time with Ctrl-C (finishes the current batch) or the dashboard's *stop after batch* button.
 
 ### CLI options
 
@@ -41,39 +50,47 @@ The wallet funds itself from the faucet on first need. Stop any time with Ctrl-C
 --no-dashboard        headless: no web dashboard
 ```
 
-### Dashboard API
+### Server API
+
+Mutations require `Authorization: Bearer <admin token>`; reads are public.
 
 | endpoint | method | purpose |
 | --- | --- | --- |
-| `/` | GET | the dashboard |
-| `/ws` | WS | full state snapshot on connect, then live deltas |
-| `/api/state` | GET | current state as JSON |
-| `/api/linger?min=60` | POST | reset the shutdown countdown to n minutes from now |
-| `/api/stop` | POST | finish the current batch, then stop uploading |
+| `/` | GET | session list (live) |
+| `/s/<id>` | GET | session dashboard — live or historical |
+| `/ws` · `/ws?s=<id>` | WS | session list / session state: snapshot on connect, then deltas |
+| `/api/sessions` | GET | all sessions as JSON |
+| `/api/sessions` | POST 🔒 | start a session `{dir, app, batch, limit, expiresDays, walletMode: "fresh"\|"env"}` |
+| `/api/sessions/<id>` | GET | full state snapshot |
+| `/api/sessions/<id>/stop` | POST 🔒 | finish the current batch, then stop |
+| `/api/sessions/<id>` | DELETE 🔒 | delete a non-running session and all its statistics |
 | `/healthz` | GET | container healthcheck |
+
+(One-shot mode keeps its `/api/state`, `/api/stop` and `/api/linger?min=n`.)
 
 ## Docker
 
-Published to GHCR on every push/tag:
+Published to GHCR on every push/tag. The container runs the always-on server; mount `/app/out` to keep the SQLite history across restarts:
 
 ```bash
 docker run -p 3000:3000 \
-  -e ATLAS_PRIVATE_KEY=0x… \
+  -e ATLAS_ADMIN_TOKEN=change-me \
   -v /path/to/pngs:/data:ro \
   -v "$PWD/out:/app/out" \
   ghcr.io/atlas-chain/atlas-doggo-uploader:latest
 ```
 
-Or let `scripts/upload-docker.sh <alias> <dir>` build the image, generate a fresh wallet and start an isolated, named job with its own checkpoint and dashboard port (`PORT=3001 scripts/upload-docker.sh cats ./cats`).
+For a one-shot containerized job, `scripts/upload-docker.sh <alias> <dir>` builds the image, generates a fresh wallet and starts an isolated named upload with its own checkpoint and dashboard port (`PORT=3001 scripts/upload-docker.sh cats ./cats`).
 
 ## Repo layout
 
 ```
 src/uploader/    engine (batching, checkpoint, reconcile, faucet), event-bus
                  instrumentation (payload fetch + RPC transport observers), stats
-src/dashboard/   Bun.serve server (static + WebSocket) and the dashboard UI
+src/server/      always-on service: session manager, admin API, bun:sqlite persistence
+src/dashboard/   one-shot Bun.serve server and the shared dashboard UI (home + session)
 src/lib/         Atlas endpoints/clients, faucet PoW client, raw read helpers
-scripts/         upload-dir (main CLI), viewer, bench, fund, hello, probe-net
+scripts/         server (main service), upload-dir (one-shot CLI), viewer, bench, …
 tests/           bun test — offline by default, ATLAS_E2E=1 for the live round-trip
 ```
 

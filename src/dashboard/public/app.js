@@ -7,6 +7,19 @@
 
 const $ = (id) => document.getElementById(id)
 
+// Session mode: /s/<id> pages are served by the always-on server — the WS is
+// scoped to that session, admin actions need the token, and there's no linger.
+const SID = location.pathname.match(/^\/s\/(s[0-9a-f]{8})/)?.[1] ?? null
+if (SID) $("back").hidden = false
+
+const TOKEN_KEY = "atlas-admin-token"
+const getToken = () => localStorage.getItem(TOKEN_KEY) ?? ""
+function promptToken(msg = "Admin token:") {
+  const t = window.prompt(msg, getToken())
+  if (t != null) localStorage.setItem(TOKEN_KEY, t.trim())
+  return getToken()
+}
+
 // ---------- state ----------
 let S = null // mirror of server stats state
 let skew = 0 // serverNow - clientNow
@@ -65,7 +78,9 @@ const payloadUrl = (id, raw) => (S?.meta ? `${S.meta.payloadUrl}/payloads/${id}$
 // ---------- websocket ----------
 let retryMs = 800
 function connect() {
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`)
+  const ws = new WebSocket(
+    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws${SID ? `?s=${SID}` : ""}`,
+  )
   ws.onopen = () => {
     wsOpen = true
     retryMs = 800
@@ -75,9 +90,10 @@ function connect() {
   ws.onclose = () => {
     wsOpen = false
     $("conn").classList.add("off")
+    // one-shot mode: the process exits after its linger window — stop retrying
     const lingerOver = S?.linger && snow() > S.linger.until - 1500
     const finished = ["done", "stopped", "error"].includes(S?.status)
-    if (finished && lingerOver) {
+    if (!SID && finished && lingerOver) {
       serverGone = true
       $("offline").hidden = false
       return
@@ -92,6 +108,11 @@ function handle(m) {
     case "hello":
       S = m.state
       skew = m.serverNow - Date.now()
+      if (!S) {
+        $("waiting").textContent = `[ session ${SID ?? "?"} not found — it may have been deleted ]`
+        $("waiting").hidden = false
+        return
+      }
       logRendered = 0
       $("log").textContent = ""
       $("waiting").hidden = !!S.meta
@@ -216,19 +237,27 @@ function renderHead() {
     $("head-block").hidden = false
     $("head-block").textContent = `block ${fmtInt(S.block)}`
   }
-  $("btn-stop").hidden = !["uploading", "funding", "reconciling", "starting"].includes(st)
+  $("btn-stop").hidden =
+    S.historical || !["uploading", "funding", "reconciling", "starting", "running"].includes(st)
 }
 
 // ---------- banner + linger ----------
 function renderBanner() {
   const b = $("banner")
-  const finished = ["done", "stopped", "error"].includes(S.status)
+  const finished = ["done", "stopped", "error", "interrupted"].includes(S.status)
   b.hidden = !finished
+  $("btn-extend").hidden = !!SID // linger only exists in one-shot mode
   if (!finished) return
-  b.className = "banner " + S.status
+  b.className = "banner " + (S.status === "interrupted" ? "error" : S.status)
   const d = S.doneSummary
   $("banner-title").textContent =
-    S.status === "done" ? "✓ run complete" : S.status === "stopped" ? "⏸ run stopped" : "✗ run crashed"
+    S.status === "done"
+      ? "✓ run complete"
+      : S.status === "stopped"
+        ? "⏸ run stopped"
+        : S.status === "interrupted"
+          ? "✕ interrupted — server restarted mid-run"
+          : "✗ run crashed"
   $("banner-body").textContent = d
     ? `${fmtInt(d.uploaded)} files uploaded (${d.failed} failed) in ${fmtDur(d.elapsedMs)} · ` +
       `${fmtBytes(S.totals.bytes)} of image data · ${fmtInt(S.totals.txCount)} transactions · ` +
@@ -289,8 +318,10 @@ function renderTiles() {
   const bps = lastAvg(sr.bps, 5)
   const fpm = sr.fpm.at(-1) ?? 0
   const remaining = Math.max(0, p.planned - t.uploaded - t.failed)
-  const etaMs = S.finishedAt || remaining <= 0 ? null : fpm > 0 ? (remaining / fpm) * 60_000 : null
-  const elapsed = S.meta ? (S.finishedAt ?? snow()) - S.meta.startedAt : null
+  const finished = ["done", "stopped", "error", "interrupted"].includes(S.status)
+  const endT = S.finishedAt ?? (finished ? sr.t.at(-1) : null) // interrupted: last observed sample
+  const etaMs = finished || remaining <= 0 ? null : fpm > 0 ? (remaining / fpm) * 60_000 : null
+  const elapsed = S.meta ? (endT ?? snow()) - S.meta.startedAt : null
   const curr = S.meta?.currency ?? "GLM"
   const avgConfirm = lastAvg(S.latency.confirm, 20)
   const avgBatch = lastAvg(S.batches.filter((b) => b.ok).map((b) => b.totalMs), 20)
@@ -659,9 +690,27 @@ function renderFoot() {
 
 // ---------- actions ----------
 $("btn-stop").addEventListener("click", async () => {
-  $("btn-stop").disabled = true
-  $("btn-stop").textContent = "stopping…"
-  await fetch("/api/stop", { method: "POST" }).catch(() => {})
+  const btn = $("btn-stop")
+  if (!SID) {
+    btn.disabled = true
+    btn.textContent = "stopping…"
+    await fetch("/api/stop", { method: "POST" }).catch(() => {})
+    return
+  }
+  // session mode: stopping is an admin action
+  const token = getToken() || promptToken()
+  const res = await fetch(`/api/sessions/${SID}/stop`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => null)
+  if (res?.status === 401) {
+    promptToken("Wrong or missing admin token — try again:")
+    return
+  }
+  if (res?.ok) {
+    btn.disabled = true
+    btn.textContent = "stopping…"
+  }
 })
 $("btn-extend").addEventListener("click", async () => {
   await fetch("/api/linger?min=60", { method: "POST" }).catch(() => {})

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas doggo uploader — sessions</title>
+<meta name="description" content="Upload sessions on the Atlas (Arkiv) data network." />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header id="topbar">
+  <div class="wordmark"><span class="bracket">[</span> ATLAS <span class="bracket">]</span> <span class="sub">DOGGO&nbsp;UPLOADER</span></div>
+  <div class="head-meta">
+    <span id="head-live" class="chip mono" hidden></span>
+  </div>
+  <div class="head-right">
+    <button id="btn-admin" class="ghost">admin token</button>
+    <span id="conn" class="conn mono" title="dashboard connection">●</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel" id="new-session">
+    <h2 class="label mono">[ new upload session — admin ]</h2>
+    <form id="form" class="form-grid mono">
+      <div class="field wide">
+        <label for="f-dir">directory of PNGs</label>
+        <input id="f-dir" name="dir" placeholder="/data" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="f-app">app attribute</label>
+        <input id="f-app" name="app" value="dogs" pattern="[a-zA-Z0-9_-]{1,32}" required />
+      </div>
+      <div class="field">
+        <label for="f-batch">batch (1–50)</label>
+        <input id="f-batch" name="batch" type="number" min="1" max="50" value="10" />
+      </div>
+      <div class="field">
+        <label for="f-limit">limit (files)</label>
+        <input id="f-limit" name="limit" type="number" min="1" placeholder="all" />
+      </div>
+      <div class="field">
+        <label for="f-expires">expires (days)</label>
+        <input id="f-expires" name="expiresDays" type="number" min="1" max="365" value="30" />
+      </div>
+      <div class="field">
+        <label for="f-wallet">wallet</label>
+        <select id="f-wallet" name="walletMode">
+          <option value="fresh">fresh throwaway (faucet-funded)</option>
+          <option value="env">server wallet (ATLAS_PRIVATE_KEY)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button type="submit" id="btn-start">start session</button>
+      </div>
+    </form>
+    <div id="form-msg" class="form-msg mono"></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="label mono">[ upload sessions ]</h2>
+    <table class="sessions mono" id="sessions-table">
+      <thead><tr>
+        <th>status</th><th>session</th><th>app / run</th><th>progress</th>
+        <th class="r">data</th><th>wallet</th><th>started</th><th class="r">duration</th><th></th>
+      </tr></thead>
+      <tbody id="sessions-body"></tbody>
+    </table>
+    <div id="empty" class="waiting mono" hidden>[ no sessions yet — start one above ]</div>
+  </section>
+
+  <footer class="mono">
+    <span>sessions and their statistics persist in sqlite — delete is explicit, admin-only</span>
+  </footer>
+</main>
+
+<script src="/home.js"></script>
+</body>
+</html>

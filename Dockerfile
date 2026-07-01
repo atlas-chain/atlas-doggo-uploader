@@ -1,11 +1,14 @@
 # Atlas doggo uploader — production container.
-# Runs the Bun upload engine with the live dashboard on :3000. Mount the PNG
-# directory at /data and pass ATLAS_PRIVATE_KEY; the wallet self-funds from
-# the public faucet, and the dashboard lingers after the run (default 60 min).
+# Runs the always-on server on :3000: session dashboard, admin-token-gated
+# session control, sqlite-persisted statistics (out/sessions.db — mount /app/out
+# to keep history across container restarts). Mount PNG datasets at /data.
 #
-#   docker run -p 3000:3000 -e ATLAS_PRIVATE_KEY=0x… \
+#   docker run -p 3000:3000 -e ATLAS_ADMIN_TOKEN=… \
 #     -v /path/to/pngs:/data:ro -v $PWD/out:/app/out \
 #     ghcr.io/atlas-chain/atlas-doggo-uploader:latest
+#
+# One-shot mode (upload once, dashboard lingers, then exits) is still there:
+#   docker run … ghcr.io/… bun scripts/upload-dir.mjs --dir /data --app dogs
 
 FROM oven/bun:1-alpine
 
@@ -24,4 +27,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["bun", "scripts/upload-dir.mjs", "--dir", "/data"]
+CMD ["bun", "scripts/server.mjs"]
