@@ -1,6 +1,6 @@
 {
   "name": "atlas-doggo-uploader",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "description": "Bun-powered batch uploader for the Atlas (experimental Arkiv) data network, with a real-time commitment-pipeline dashboard",
@@ -18,7 +18,7 @@
     "test": "bun test tests/"
   },
   "dependencies": {
-    "@atlas-chain/sdk": "^0.6.15"
+    "@atlas-chain/sdk": "^0.8.0"
   },
   "engines": {
     "bun": ">=1.2"

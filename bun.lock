@@ -5,14 +5,14 @@
     "": {
       "name": "atlas-doggo-uploader",
       "dependencies": {
-        "@atlas-chain/sdk": "^0.6.15",
+        "@atlas-chain/sdk": "^0.8.0",
       },
     },
   },
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
 
-    "@atlas-chain/sdk": ["@atlas-chain/sdk@0.6.15", "", { "dependencies": { "brotli-wasm": "^3.0.1", "typedoc-plugin-markdown": "^4.9.0", "viem": "^2.38.2" }, "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-nmzyXYSIGm3j3OwMLG+OYxD5Lz4T1Nyq5+Xg7Mie/2rvVj4xYazsTIywbNhQD6GlzUVJyYeiJETXQOK196obOA=="],
+    "@atlas-chain/sdk": ["@atlas-chain/sdk@0.8.0", "", { "dependencies": { "brotli-wasm": "^3.0.1", "typedoc-plugin-markdown": "^4.9.0", "viem": "^2.38.2" }, "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-V1jkjr6+deDwvTzC7+E8ThRQZ+2rfxv3o3Ukqafe7HR6VpII3d/2QH2H3P4PqjtGM8HrtKCaKv2vC5+ytzRCMQ=="],
 
     "@gerrit0/mini-shiki": ["@gerrit0/mini-shiki@3.23.0", "", { "dependencies": { "@shikijs/engine-oniguruma": "^3.23.0", "@shikijs/langs": "^3.23.0", "@shikijs/themes": "^3.23.0", "@shikijs/types": "^3.23.0", "@shikijs/vscode-textmate": "^10.0.2" } }, "sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg=="],
 
